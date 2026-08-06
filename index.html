@@ -113,7 +113,7 @@
 
   <div class="row toggle">
     <label style="margin:0">スケール表示</label>
-    <span class="switch"><input type="checkbox" id="scaleToggle" checked /><span class="slider"></span></span>
+    <label class="switch"><input type="checkbox" id="scaleToggle" checked /><span class="slider"></span></label>
   </div>
 
   <div class="row">
@@ -124,7 +124,7 @@
 <div id="hint">ドラッグ：回転　｜　ホイール：ズーム　｜　右ドラッグ：移動</div>
 
 <div id="scalebar">
-  <div class="lbl"><b id="scaleNum">–</b><span>単位</span></div>
+  <div class="lbl"><b id="scaleNum">–</b><span id="scaleUnit">mm</span></div>
   <div class="bar" id="scaleBarLine" style="width:120px"></div>
 </div>
 
@@ -136,6 +136,12 @@
     obj: "model/sample.obj",   // ← あなたの .obj のパスに変更
     mtl: "model/sample.mtl",   // ← .mtl が無い場合は "" にしてください
     // テクスチャは .mtl 内の map_Kd で参照されます（同じフォルダに置く）
+
+    // スケール表示の設定：モデル座標 1 が実寸で何 mm かを指定します。
+    // 例）モデルを mm 単位で作ってあるなら 1、cm 単位なら 10、m 単位なら 1000。
+    unitToMm: 1,
+    // スケールバーが表示する最大値（mm）。10cm = 100mm。
+    maxScaleMm: 100,
   };
 </script>
 
@@ -312,16 +318,21 @@ function formatNum(n) {
   return n.toPrecision(1).replace(/0+$/, "").replace(/\.$/, "");
 }
 const TARGET_PX = 120;
+const UNIT_TO_MM = (cfg && cfg.unitToMm) || 1;      // model units → mm
+const MAX_SCALE_MM = (cfg && cfg.maxScaleMm) || 100; // cap (100mm = 10cm)
 function updateScaleBar() {
   if (!scaleVisible) return;
   const dist = camera.position.distanceTo(controls.target);
   const vh = renderer.domElement.clientHeight || window.innerHeight;
   const worldPerPixel = (2 * dist * Math.tan((camera.fov * Math.PI / 180) / 2)) / vh;
   if (!isFinite(worldPerPixel) || worldPerPixel <= 0) return;
-  const nice = niceNumber(worldPerPixel * TARGET_PX);
-  const px = nice / worldPerPixel;
+  const mmPerPixel = worldPerPixel * UNIT_TO_MM;
+  // pick a nice round mm value that is close to TARGET_PX wide, capped at 10cm
+  let niceMm = niceNumber(mmPerPixel * TARGET_PX);
+  if (niceMm > MAX_SCALE_MM) niceMm = MAX_SCALE_MM;
+  const px = niceMm / mmPerPixel;
   scaleBarLine.style.width = px.toFixed(1) + "px";
-  scaleNum.textContent = formatNum(nice);
+  scaleNum.textContent = formatNum(niceMm);
 }
 
 document.getElementById("resetBtn").addEventListener("click", () => {
