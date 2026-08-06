@@ -133,16 +133,18 @@
 <!-- ============================================================= -->
 <script>
   window.MODEL_CONFIG = {
-    // ▼ 自動検出：GitHub Pages では下の modelDir フォルダ内の .obj を自動で探して
+    // ▼ 自動検出：GitHub Pages では下の modelDir フォルダ内のモデルを自動で探して
     //   表示します。ファイル名の変更や obj/mtl の書き換えは不要です。
-    //   （同名の .mtl があれば一緒に読み込みます。テクスチャは .mtl 内で参照）
+    //   対応形式：.glb / .gltf / .obj（.glb を優先。大きい .obj は .glb 変換推奨）
+    //   （.obj のときは同名の .mtl があれば一緒に読み込みます）
     autoDetect: true,
     modelDir: "model",
 
     // ▼ 自動検出できない環境（ローカル表示など）や autoDetect: false のときに使うパス
-    obj: "model/sample.obj",   // ← あなたの .obj のパスに変更
-    mtl: "model/sample.mtl",   // ← .mtl が無い場合は "" にしてください
+    obj: "model/sample.obj",   // ← .obj / .glb / .gltf のパスに変更
+    mtl: "model/sample.mtl",   // ← .obj 用。.mtl が無い / glb の場合は "" でOK
     // テクスチャは .mtl 内の map_Kd で参照されます（PNG / JPG どちらでもOK）。
+    // .glb はテクスチャを内包するので mtl は不要です。
 
     // 任意：.mtl を使わずテクスチャ画像を直接貼りたいとき、ここにパスを書きます
     // （jpg / png / webp などブラウザが表示できる形式ならOK）。
@@ -171,6 +173,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
 import { OBJLoader } from "three/addons/OBJLoader.js";
 import { MTLLoader } from "three/addons/MTLLoader.js";
+import { GLTFLoader } from "three/addons/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/DRACOLoader.js";
 
 const cfg = window.MODEL_CONFIG;
 const app = document.getElementById("app");
@@ -285,7 +289,29 @@ function loadOBJ(objPath, materials) {
   });
 }
 
+// glTF / GLB loader (with Draco decompression support)
+let dracoLoader = null;
+function getDraco() {
+  if (!dracoLoader) {
+    dracoLoader = new DRACOLoader(manager);
+    dracoLoader.setDecoderPath("vendor/three/addons/draco/gltf/");
+  }
+  return dracoLoader;
+}
+function loadGLTF(path) {
+  const loader = new GLTFLoader(manager);
+  loader.setDRACOLoader(getDraco());
+  loader.load(path, (gltf) => addObject(gltf.scene), undefined, () => {
+    showError(`モデルを読み込めませんでした：<br><code>${path}</code>`);
+  });
+}
+
 function startLoad(objPath, mtlPath) {
+  const ext = (objPath || "").toLowerCase();
+  if (ext.endsWith(".glb") || ext.endsWith(".gltf")) {
+    loadGLTF(objPath);
+    return;
+  }
   if (mtlPath && mtlPath.trim() !== "") {
     const mtlLoader = new MTLLoader(manager);
     // resolve texture paths relative to the mtl folder
@@ -326,16 +352,20 @@ async function resolveModel() {
     if (!res.ok) throw new Error("GitHub API " + res.status);
     const list = await res.json();
     if (!Array.isArray(list)) throw new Error("unexpected response");
-    const objs = list.filter(f => f.type === "file" && /\.obj$/i.test(f.name));
-    if (!objs.length) throw new Error("no .obj in /" + cfg.modelDir);
-    const obj = objs[0];
-    const baseName = obj.name.replace(/\.obj$/i, "").toLowerCase();
-    const mtl = list.find(f => f.name.toLowerCase() === baseName + ".mtl")
-             || list.find(f => f.type === "file" && /\.mtl$/i.test(f.name));
-    return {
-      obj: cfg.modelDir + "/" + obj.name,
-      mtl: mtl ? cfg.modelDir + "/" + mtl.name : "",
-    };
+    const files = list.filter(f => f.type === "file");
+    // .glb → .gltf → .obj の優先順で選ぶ
+    const pick = files.find(f => /\.glb$/i.test(f.name))
+              || files.find(f => /\.gltf$/i.test(f.name))
+              || files.find(f => /\.obj$/i.test(f.name));
+    if (!pick) throw new Error("no model (.glb/.gltf/.obj) in /" + cfg.modelDir);
+    let mtl = "";
+    if (/\.obj$/i.test(pick.name)) {
+      const baseName = pick.name.replace(/\.obj$/i, "").toLowerCase();
+      const m = files.find(f => f.name.toLowerCase() === baseName + ".mtl")
+             || files.find(f => /\.mtl$/i.test(f.name));
+      mtl = m ? cfg.modelDir + "/" + m.name : "";
+    }
+    return { obj: cfg.modelDir + "/" + pick.name, mtl };
   } catch (e) {
     console.warn("モデルの自動検出に失敗、設定値を使用します:", e.message);
     return fallback;

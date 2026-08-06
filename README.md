@@ -1,8 +1,9 @@
 # 3D モデルビューアー（GitHub Pages 用）
 
-OBJ モデル＋テクスチャを GitHub に置くだけで、誰でもブラウザで閲覧できる
-「閲覧専用」の Web アプリです。Three.js を同梱しているので外部 CDN に依存せず、
-オフラインでも GitHub Pages でも同じように動きます。
+3Dモデル（**.obj / .glb / .gltf**）＋テクスチャを GitHub に置くだけで、誰でも
+ブラウザで閲覧できる「閲覧専用」の Web アプリです。Three.js を同梱しているので
+外部 CDN に依存せず、オフラインでも GitHub Pages でも同じように動きます。
+容量の大きいモデルは GLB 形式が推奨です（後述）。
 
 ## 含まれるファイル
 
@@ -89,6 +90,35 @@ window.MODEL_CONFIG = {
 - `.mtl` を使わずテクスチャ画像を直接貼りたい場合は、`MODEL_CONFIG` の
   `texture: "model/画像.jpg"` に画像パスを指定してください（.mtl より優先）。
 - 大きすぎる／小さすぎるモデルでも、起動時に自動でカメラ位置を合わせます。
+
+## 大きい OBJ は GLB に変換（推奨）
+
+GitHub のアップロード制限は次のとおりです。
+
+- **ブラウザ（ドラッグ＆ドロップ）：1ファイル 25MB まで**
+- **GitHub Desktop / git コマンド：1ファイル 100MB まで**（それ以上は不可）
+
+OBJ はテキスト形式でとても容量が大きいため、25MB や 100MB を超えることがあります。
+その場合は **GLB（バイナリ形式）に変換**してください。多くの場合サイズが数分の一〜
+数十分の一になり、表示も速くなります。このビューアーは `.glb` / `.gltf` に対応済みで、
+GLB を `model/` フォルダに入れて push すれば自動で表示されます（テクスチャは GLB に
+内包されるので別ファイルは不要）。
+
+### 変換方法A：Blender（無料・GUI）
+
+1. Blender で **ファイル → インポート → Wavefront (.obj)** でモデルを読み込む
+2. **ファイル → エクスポート → glTF 2.0 (.glb)** を選ぶ
+3. 右側の設定で **圧縮（Draco mesh compression）にチェック**を入れて書き出す
+
+### 変換方法B：コマンド（Node.js が必要）
+
+```bash
+npm install -g obj2gltf gltf-pipeline
+obj2gltf -i model.obj -o temp.glb
+gltf-pipeline -i temp.glb -o model.glb --draco.compressionLevel 7
+```
+
+できあがった `model.glb` を `model/` フォルダに入れて push すれば完了です。
 
 ## うまく表示されないとき（重要）
 
