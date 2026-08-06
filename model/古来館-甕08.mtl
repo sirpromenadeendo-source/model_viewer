@@ -1,0 +1,22 @@
+newmtl Textured_0
+
+Ka 1.000 1.000 1.000
+Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
+d 1.0
+
+map_Ka 古来館-甕08_0.png
+map_Kd 古来館-甕08_0.png
+map_Ks 古来館-甕08_0.png
+
+newmtl Textured_1
+
+Ka 1.000 1.000 1.000
+Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
+d 1.0
+
+map_Ka 古来館-甕08_1.png
+map_Kd 古来館-甕08_1.png
+map_Ks 古来館-甕08_1.png
+

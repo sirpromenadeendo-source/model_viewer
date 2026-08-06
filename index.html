@@ -133,9 +133,21 @@
 <!-- ============================================================= -->
 <script>
   window.MODEL_CONFIG = {
+    // ▼ 自動検出：GitHub Pages では下の modelDir フォルダ内の .obj を自動で探して
+    //   表示します。ファイル名の変更や obj/mtl の書き換えは不要です。
+    //   （同名の .mtl があれば一緒に読み込みます。テクスチャは .mtl 内で参照）
+    autoDetect: true,
+    modelDir: "model",
+
+    // ▼ 自動検出できない環境（ローカル表示など）や autoDetect: false のときに使うパス
     obj: "model/sample.obj",   // ← あなたの .obj のパスに変更
     mtl: "model/sample.mtl",   // ← .mtl が無い場合は "" にしてください
-    // テクスチャは .mtl 内の map_Kd で参照されます（同じフォルダに置く）
+    // テクスチャは .mtl 内の map_Kd で参照されます（PNG / JPG どちらでもOK）。
+
+    // 任意：.mtl を使わずテクスチャ画像を直接貼りたいとき、ここにパスを書きます
+    // （jpg / png / webp などブラウザが表示できる形式ならOK）。
+    // 指定した場合は .mtl のテクスチャより優先されます。使わないなら "" のまま。
+    texture: "",
 
     // スケール表示の設定：モデル座標 1 が実寸で何 mm かを指定します。
     // 例）モデルを mm 単位で作ってあるなら 1、cm 単位なら 10、m 単位なら 1000。
@@ -230,9 +242,32 @@ function showError(msg) {
   overlay.querySelector(".msg").innerHTML = msg;
 }
 
+function applyTextureOverride(root, url) {
+  const tl = new THREE.TextureLoader(manager);
+  tl.load(url, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace; // 色を正しく表示
+    root.traverse((c) => {
+      if (!c.isMesh) return;
+      const mats = Array.isArray(c.material) ? c.material : [c.material];
+      mats.forEach((m) => {
+        if (!m) return;
+        m.map = tex;
+        if (m.color) m.color.set(0xffffff); // テクスチャ色をそのまま出す
+        m.needsUpdate = true;
+      });
+    });
+  }, undefined, () => {
+    console.warn("テクスチャ画像を読み込めませんでした: " + url);
+  });
+}
+
 function addObject(object) {
   scene.add(object);
   frameObject(object);
+  // 直接テクスチャ指定があれば上書き適用（jpg / png どちらでも可）
+  if (cfg.texture && cfg.texture.trim() !== "") {
+    applyTextureOverride(object, cfg.texture);
+  }
   overlay.classList.add("hidden");
 }
 
@@ -242,30 +277,72 @@ manager.onError = (url) => {
     パスが正しいか、GitHub 上に同じ階層でアップロードされているか確認してください。`);
 };
 
-function loadOBJ(materials) {
+function loadOBJ(objPath, materials) {
   const loader = new OBJLoader(manager);
   if (materials) loader.setMaterials(materials);
-  loader.load(cfg.obj, addObject, undefined, (e) => {
-    showError(`OBJ を読み込めませんでした：<br><code>${cfg.obj}</code>`);
+  loader.load(objPath, addObject, undefined, (e) => {
+    showError(`OBJ を読み込めませんでした：<br><code>${objPath}</code>`);
   });
 }
 
-if (cfg.mtl && cfg.mtl.trim() !== "") {
-  const mtlLoader = new MTLLoader(manager);
-  // resolve texture paths relative to the mtl folder
-  const base = cfg.mtl.substring(0, cfg.mtl.lastIndexOf("/") + 1);
-  mtlLoader.setResourcePath(base);
-  mtlLoader.load(cfg.mtl, (materials) => {
-    materials.preload();
-    loadOBJ(materials);
-  }, undefined, () => {
-    // MTL failed → load OBJ without materials
-    console.warn("MTL の読み込みに失敗。マテリアル無しで表示します。");
-    loadOBJ(null);
-  });
-} else {
-  loadOBJ(null);
+function startLoad(objPath, mtlPath) {
+  if (mtlPath && mtlPath.trim() !== "") {
+    const mtlLoader = new MTLLoader(manager);
+    // resolve texture paths relative to the mtl folder
+    const base = mtlPath.substring(0, mtlPath.lastIndexOf("/") + 1);
+    mtlLoader.setResourcePath(base);
+    mtlLoader.load(mtlPath, (materials) => {
+      materials.preload();
+      loadOBJ(objPath, materials);
+    }, undefined, () => {
+      // MTL failed → load OBJ without materials
+      console.warn("MTL の読み込みに失敗。マテリアル無しで表示します。");
+      loadOBJ(objPath, null);
+    });
+  } else {
+    loadOBJ(objPath, null);
+  }
 }
+
+// --- Auto-detect the model file inside modelDir on GitHub Pages ---
+function detectRepo() {
+  const host = location.hostname;               // e.g. user.github.io
+  if (!host.endsWith(".github.io")) return null; // not GitHub Pages
+  const owner = host.replace(".github.io", "");
+  const seg = location.pathname.split("/").filter(Boolean);
+  // project page → /<repo>/... ; user page → repo is <owner>.github.io
+  const repo = seg.length ? seg[0] : (owner + ".github.io");
+  return { owner, repo };
+}
+
+async function resolveModel() {
+  const fallback = { obj: cfg.obj, mtl: cfg.mtl };
+  if (!cfg.autoDetect) return fallback;
+  try {
+    const rp = detectRepo();
+    if (!rp) return fallback; // ローカル等 → 設定値を使う
+    const api = `https://api.github.com/repos/${rp.owner}/${rp.repo}/contents/${cfg.modelDir}`;
+    const res = await fetch(api, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) throw new Error("GitHub API " + res.status);
+    const list = await res.json();
+    if (!Array.isArray(list)) throw new Error("unexpected response");
+    const objs = list.filter(f => f.type === "file" && /\.obj$/i.test(f.name));
+    if (!objs.length) throw new Error("no .obj in /" + cfg.modelDir);
+    const obj = objs[0];
+    const baseName = obj.name.replace(/\.obj$/i, "").toLowerCase();
+    const mtl = list.find(f => f.name.toLowerCase() === baseName + ".mtl")
+             || list.find(f => f.type === "file" && /\.mtl$/i.test(f.name));
+    return {
+      obj: cfg.modelDir + "/" + obj.name,
+      mtl: mtl ? cfg.modelDir + "/" + mtl.name : "",
+    };
+  } catch (e) {
+    console.warn("モデルの自動検出に失敗、設定値を使用します:", e.message);
+    return fallback;
+  }
+}
+
+resolveModel().then(({ obj, mtl }) => startLoad(obj, mtl));
 
 // --- UI wiring ---
 const bgColorInput = document.getElementById("bgColor");
