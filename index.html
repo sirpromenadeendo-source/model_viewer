@@ -116,8 +116,13 @@
     <label class="switch"><input type="checkbox" id="scaleToggle" checked /><span class="slider"></span></label>
   </div>
 
+  <div class="row toggle">
+    <label style="margin:0">回転中心を表示</label>
+    <label class="switch"><input type="checkbox" id="pivotToggle" /><span class="slider"></span></label>
+  </div>
+
   <div class="row">
-    <button class="btn" id="resetBtn">視点をリセット</button>
+    <button class="btn" id="resetBtn">視点をリセット（中心に戻す）</button>
   </div>
 </div>
 
@@ -175,6 +180,7 @@ import { OBJLoader } from "three/addons/OBJLoader.js";
 import { MTLLoader } from "three/addons/MTLLoader.js";
 import { GLTFLoader } from "three/addons/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/DRACOLoader.js";
+import { MeshoptDecoder } from "three/addons/meshopt_decoder.module.js";
 
 const cfg = window.MODEL_CONFIG;
 const app = document.getElementById("app");
@@ -247,6 +253,15 @@ controls.screenSpacePanning = true;
 let homeTarget = new THREE.Vector3();
 let homePos = camera.position.clone();
 
+// --- Pivot marker (shows the rotation center = controls.target) ---
+const pivot = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 24, 16),
+  new THREE.MeshBasicMaterial({ color: 0x06d6a0, transparent: true, opacity: 0.55, depthTest: false })
+);
+pivot.renderOrder = 999;
+pivot.visible = false;
+scene.add(pivot);
+
 // --- Fit camera to object ---
 function frameObject(obj) {
   const box = new THREE.Box3().setFromObject(obj);
@@ -256,6 +271,9 @@ function frameObject(obj) {
 
   // center the model at origin
   obj.position.sub(center);
+
+  // size the pivot marker relative to the model
+  pivot.scale.setScalar(maxDim * 0.02);
 
   const fov = camera.fov * (Math.PI / 180);
   let dist = (maxDim / 2) / Math.tan(fov / 2);
@@ -353,9 +371,11 @@ function getDraco() {
   }
   return dracoLoader;
 }
-function loadGLTF(path) {
+async function loadGLTF(path) {
   const loader = new GLTFLoader(manager);
-  loader.setDRACOLoader(getDraco());
+  loader.setDRACOLoader(getDraco());          // Draco 圧縮に対応
+  await MeshoptDecoder.ready;
+  loader.setMeshoptDecoder(MeshoptDecoder);   // meshopt 圧縮に対応
   loader.load(path, (gltf) => addObject(gltf.scene), undefined, () => {
     showError(`モデルを読み込めませんでした：<br><code>${path}</code>`);
   });
@@ -469,6 +489,12 @@ scaleToggle.addEventListener("change", () => {
   scalebar.classList.toggle("hidden", !scaleVisible);
 });
 
+// 回転中心マーカーの表示切り替え
+const pivotToggle = document.getElementById("pivotToggle");
+pivotToggle.addEventListener("change", () => {
+  pivot.visible = pivotToggle.checked;
+});
+
 function niceNumber(x) {
   const exp = Math.floor(Math.log10(x));
   const f = x / Math.pow(10, exp);
@@ -515,6 +541,7 @@ window.addEventListener("resize", () => {
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  if (pivot.visible) pivot.position.copy(controls.target);  // 回転中心に追従
   updateScaleBar();
   renderer.render(scene, camera);
 }
