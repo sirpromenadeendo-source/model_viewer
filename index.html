@@ -175,7 +175,7 @@
 
 <script type="module">
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/OrbitControls.js";
+import { TrackballControls } from "three/addons/TrackballControls.js";
 import { OBJLoader } from "three/addons/OBJLoader.js";
 import { MTLLoader } from "three/addons/MTLLoader.js";
 import { GLTFLoader } from "three/addons/GLTFLoader.js";
@@ -245,10 +245,13 @@ dir2.position.set(-6, -2, -4);
 scene.add(dir2);
 
 // --- Controls ---
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.screenSpacePanning = true;
+// トラックボール式：上下の頭打ちがなく、全方向に自由回転できる
+const controls = new TrackballControls(camera, renderer.domElement);
+controls.rotateSpeed = 3.5;
+controls.zoomSpeed = 1.2;
+controls.panSpeed = 0.8;
+controls.staticMoving = false;        // 少しだけ慣性を付ける
+controls.dynamicDampingFactor = 0.15;
 
 let homeTarget = new THREE.Vector3();
 let homePos = camera.position.clone();
@@ -526,6 +529,7 @@ function updateScaleBar() {
 
 document.getElementById("resetBtn").addEventListener("click", () => {
   camera.position.copy(homePos);
+  camera.up.set(0, 1, 0);            // 傾き（ロール）も元に戻す
   controls.target.copy(homeTarget);
   controls.update();
 });
@@ -535,6 +539,7 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  controls.handleResize();
 });
 
 // --- Render loop ---
